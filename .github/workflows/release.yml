@@ -1,0 +1,171 @@
+# Tag vX.Y.Z or vX.Y.Z-rcN and this builds every app and publishes one release.
+# Every file is renamed to a STABLE name (no version in it): web/releases.js
+# links these exact names, and test/releases.test.mjs fails if they drift.
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (it must already exist), e.g. v0.1.0-rc1'
+        required: true
+permissions:
+  contents: write
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: mac
+            args: --target universal-apple-darwin --bundles dmg
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - os: windows-latest
+            name: windows
+            args: --bundles nsis
+            rust_targets: ''
+          - os: ubuntu-22.04
+            name: linux
+            args: --bundles appimage,deb
+            rust_targets: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+      - name: Build the obfuscated app into the shell
+        shell: bash
+        run: |
+          npm ci && npm ci --prefix host && npm run build
+          cp dist/app-shell/index.html app/shell/index.html
+      - name: Linux build deps
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: Build
+        working-directory: app
+        run: |
+          npm ci
+          npx tauri build ${{ matrix.args }}
+      - name: Collect under stable names
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          B=app/src-tauri/target
+          case "${{ matrix.name }}" in
+            mac)     cp "$(ls $B/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)" out/AISO-macOS-universal.dmg ;;
+            windows) cp "$(ls $B/release/bundle/nsis/*-setup.exe | head -1)" out/AISO-Windows-x64-setup.exe ;;
+            linux)   cp "$(ls $B/release/bundle/appimage/*.AppImage | head -1)" out/AISO-Linux-x86_64.AppImage
+                     cp "$(ls $B/release/bundle/deb/*.deb | head -1)" out/AISO-Linux-amd64.deb ;;
+          esac
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.name }}
+          path: out/*
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - name: Build the obfuscated app into the shell
+        shell: bash
+        run: |
+          npm ci && npm ci --prefix host && npm run build
+          cp dist/app-shell/index.html app/shell/index.html
+      - name: NDK
+        run: |
+          sdkmanager --install "ndk;27.0.12077973"
+          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.0.12077973" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: Build (debug-signed APK, arm64)
+        working-directory: app
+        run: |
+          npm ci
+          npx tauri android init --ci
+          npx tauri android build --debug --apk --target aarch64
+      - name: Collect under stable name
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp "$(find app/src-tauri/gen/android -name '*.apk' -path '*debug*' | head -1)" out/AISO-Android-arm64.apk
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-android
+          path: out/*
+
+  host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci && npm ci --prefix host && npm test && npm run build
+      - name: Collect
+        run: |
+          mkdir -p out
+          cp dist/aiso-host.tgz out/aiso-host.tgz
+          cp dist/SHA256SUMS out/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-host
+          path: out/*
+
+  publish:
+    needs: [host, desktop, android]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: build-*
+          merge-multiple: true
+          path: out
+      - name: What made it
+        run: ls -la out
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: AISO ${{ env.TAG }}
+          prerelease: ${{ contains(env.TAG, '-') }}
+          fail_on_unmatched_files: false
+          files: out/*
+          body: |
+            AISO open beta. Your home computer hosts your own ship: download aiso-host.tgz there and run `node aiso.mjs boot`.
+            The apps pair with YOUR host. Builds are unsigned: see the landing page for the one-time "open anyway" step.
+            Reproducible: `npm ci && npm run build && sha256sum -c dist/SHA256SUMS` on this tag gives the same bytes.

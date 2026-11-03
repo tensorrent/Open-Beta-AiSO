@@ -1,0 +1,25 @@
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci && npm ci --prefix host
+      - run: npm test
+      - name: Build (bundled + obfuscated), twice, and require identical bytes
+        run: |
+          npm run build
+          cp dist/SHA256SUMS /tmp/first
+          npm run build
+          diff /tmp/first dist/SHA256SUMS
+      - name: Smoke-test the obfuscated host
+        run: |
+          export AISO_HOME=$(mktemp -d)
+          node dist/aiso-host/aiso.mjs models
+          node dist/aiso-host/aiso.mjs audit
