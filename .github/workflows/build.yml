@@ -112,6 +112,9 @@ jobs:
       - name: The obfuscated app into the shell
         run: |
           chmod +x app/src-tauri/binaries/* || true
+          # A universal macOS build compiles each arch separately and asks for each name.
+          U=app/src-tauri/binaries/aiso-engine-universal-apple-darwin
+          if [ -f "$U" ]; then cp "$U" app/src-tauri/binaries/aiso-engine-aarch64-apple-darwin; cp "$U" app/src-tauri/binaries/aiso-engine-x86_64-apple-darwin; fi
           ls -la app/src-tauri/binaries
           npm ci && npm ci --prefix host && npm run build
           cp dist/app-shell/index.html app/shell/index.html
@@ -141,13 +144,20 @@ jobs:
         if: matrix.name == 'linux'
         run: |
           export AISO_HOME="$RUNNER_TEMP/qa-home"
+          # Headless CI has no GPU: software rendering for WebKitGTK.
+          export WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1
+          ls -la app/src-tauri/target/release/ | grep -E "aiso" || true
+          app/src-tauri/target/release/aiso-engine models
           xvfb-run -a -s "-screen 0 1280x800x24" bash -c '
-            app/src-tauri/target/release/aiso & APP=$!
-            sleep 15
-            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8786/setup/state)
+            app/src-tauri/target/release/aiso > qa/linux-app.log 2>&1 & APP=$!
+            code=000
+            for i in $(seq 1 30); do code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8786/setup/state); [ "$code" = "401" ] && break; sleep 1; done
+            sleep 6
             echo "engine answered $code"
+            ps -eo pid,args | grep -E "[a]iso" || true
             import -window root qa/linux.png
-            kill $APP
+            kill $APP || true
+            cat qa/linux-app.log | grep -v dbind | tail -20
             [ "$code" = "401" ]'
       - name: QA (macOS)
         if: matrix.name == 'mac'
@@ -307,7 +317,7 @@ jobs:
       - name: QA on the simulator (install, launch, screenshot)
         run: |
           mkdir -p qa out
-          APP=$(find app/src-tauri/gen/apple/build "$HOME/Library/Developer/Xcode/DerivedData" -name '*.app' -path '*simulator*' 2>/dev/null | head -1)
+          APP=$(ls -d app/src-tauri/gen/apple/build/arm64-sim/*.app | head -1)   # the bundle Tauri reports as finished
           echo "app=$APP"
           DEV=$(xcrun simctl list devices available | grep -m1 -E 'iPhone 1[5-9]' | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
           xcrun simctl boot "$DEV"
