@@ -47,9 +47,11 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           npm run build:sea && cp dist/sea/aiso /tmp/aiso-arm64
-          # x64 Node runs under Rosetta; the SEA copies the running node, so this yields an x64 binary.
-          curl -fsSL "https://nodejs.org/dist/v22.23.0/node-v22.23.0-darwin-x64.tar.gz" | tar xz -C /tmp
-          /tmp/node-v22.23.0-darwin-x64/bin/node tools/build.mjs --sea && cp dist/sea/aiso /tmp/aiso-x64
+          # The same bundle, wrapped in x64 Node (runs under Rosetta): the SEA copies the running node.
+          V=$(node -p process.version)
+          curl -fsSL "https://nodejs.org/dist/$V/node-$V-darwin-x64.tar.gz" | tar xz -C /tmp
+          "/tmp/node-$V-darwin-x64/bin/node" tools/build.mjs --sea --inject-only && cp dist/sea/aiso /tmp/aiso-x64
+          file /tmp/aiso-arm64 /tmp/aiso-x64
           mkdir -p out
           lipo -create /tmp/aiso-arm64 /tmp/aiso-x64 -output out/aiso-engine-universal-apple-darwin
           codesign --force --sign - out/aiso-engine-universal-apple-darwin
@@ -214,11 +216,14 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - uses: android-actions/setup-android@v3
+      # The runner image ships the Android SDK; use its own sdkmanager.
       - name: NDK
         run: |
-          sdkmanager --install "ndk;27.0.12077973"
-          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.0.12077973" >> "$GITHUB_ENV"
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKM" ] || SDKM=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | tail -1)
+          yes | "$SDKM" --install "ndk;27.0.12077973" "platform-tools" > /dev/null
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,x86_64-linux-android
