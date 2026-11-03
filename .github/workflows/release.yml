@@ -12,7 +12,7 @@ jobs:
     secrets: inherit
   publish:
     needs: build
-    if: ${{ !cancelled() }}
+    if: ${{ needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -20,16 +20,24 @@ jobs:
           pattern: build-*
           merge-multiple: true
           path: out
-      - run: ls -la out
+      - name: Require every installer and checksum the release
+        working-directory: out
+        run: |
+          set -euo pipefail
+          files=(AISO-macOS-universal.dmg AISO-Windows-x64-setup.exe AISO-Windows-x64.msi AISO-Linux-x86_64.AppImage AISO-Linux-amd64.deb AISO-Linux-x86_64.rpm AISO-Android-arm64.apk AISO-iOS-Simulator.app.zip aiso-host.tgz)
+          for file in "${files[@]}"; do test -s "$file"; done
+          sha256sum "${files[@]}" > SHA256SUMS
+          sha256sum -c SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: AISO ${{ github.ref_name }}
           prerelease: ${{ contains(github.ref_name, '-') }}
-          fail_on_unmatched_files: false
+          fail_on_unmatched_files: true
           files: out/*
           body: |
             AISO open beta. Install the desktop app on your home computer: it IS your host (setup wizard on first run).
             Phones: Android APK below; iPhone/iPad: open your host's address in Safari → Add to Home Screen.
             Headless server: aiso-host.tgz (`node aiso.mjs boot`). Builds are unsigned: see the landing page.
-            Reproducible: `npm ci && npm run build && sha256sum -c SHA256SUMS`.
+            Verify downloads: `sha256sum -c SHA256SUMS --ignore-missing` in the download directory.
+            Rebuild the host from this tag using Node 22: `npm ci && npm ci --prefix host && npm run build`.
