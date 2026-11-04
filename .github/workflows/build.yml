@@ -276,8 +276,8 @@ jobs:
         working-directory: app
         run: |
           npm ci
-          npx tauri android init --ci
-          npx tauri android build --debug --apk --target aarch64 --target x86_64
+          npm run android:init
+          npm run android:build -- --debug --apk --target aarch64 --target x86_64
       - name: Collect
         run: |
           set -euo pipefail
@@ -313,9 +313,16 @@ jobs:
           target: google_apis
           script: |
             adb install -r out/AISO-Android-arm64.apk
+            adb shell cmd uimode night no
             adb shell monkey -p app.tensorrent.aiso -c android.intent.category.LAUNCHER 1
             sleep 20
             adb exec-out screencap -p > qa/android.png
+            adb shell pidof app.tensorrent.aiso
+            adb shell cmd uimode night yes
+            adb shell am force-stop app.tensorrent.aiso
+            adb shell monkey -p app.tensorrent.aiso -c android.intent.category.LAUNCHER 1
+            sleep 5
+            adb exec-out screencap -p > qa/android-dark.png
             adb shell pidof app.tensorrent.aiso
       - uses: actions/upload-artifact@v4
         with:
