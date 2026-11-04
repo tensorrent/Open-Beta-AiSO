@@ -239,10 +239,11 @@ jobs:
           java-version: 17
       # The runner image ships the Android SDK; use its own sdkmanager.
       - name: NDK
+        timeout-minutes: 15
         run: |
           SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           [ -x "$SDKM" ] || SDKM=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | tail -1)
-          (yes || true) | "$SDKM" --install "ndk;27.0.12077973" "platform-tools" > /dev/null || true
+          (yes || true) | "$SDKM" --install "ndk;27.0.12077973" "platform-tools"
           [ -d "$ANDROID_HOME/ndk/27.0.12077973" ] || { echo "NDK did not install"; exit 1; }
           echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
