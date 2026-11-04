@@ -18,6 +18,16 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  deployment:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Staging filesystem and authenticated health-check boundaries
+        run: python -m unittest discover -s deploy -p 'test_*.py' -v
+
   # The optional cloud relay must never expose its owner's token anonymously.
   huggingface:
     runs-on: ubuntu-22.04
