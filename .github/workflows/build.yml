@@ -18,6 +18,20 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  # The optional cloud relay must never expose its owner's token anonymously.
+  huggingface:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: integrations/huggingface/requirements.txt
+      - run: pip install -r integrations/huggingface/requirements.txt
+      - name: Authenticated relay HTTP checks (synthetic host)
+        run: python -m unittest discover -s integrations/huggingface -p 'test_*.py' -v
+
   # ---------------------------------------------------------------- the engine
   # The host as one native executable (Node SEA), per OS, on that OS.
   engine:
