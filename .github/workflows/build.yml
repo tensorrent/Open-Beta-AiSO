@@ -164,13 +164,20 @@ jobs:
         if: matrix.name == 'mac'
         run: |
           export AISO_HOME="$RUNNER_TEMP/qa-home"
+          clang -fobjc-arc -framework Foundation -framework Vision tools/check-macos-welcome.m -o "$RUNNER_TEMP/check-aiso-welcome"
           APPDIR=$(ls -d app/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app | head -1)
           "$APPDIR/Contents/MacOS/aiso" & APP=$!
+          trap 'kill "$APP" 2>/dev/null || true' EXIT
           ready=0
           node tools/wait-setup.mjs 8786 && ready=1
-          screencapture -x qa/mac.png || true
-          kill $APP
+          visible=0
+          for attempt in $(seq 1 20); do
+            screencapture -x qa/mac.png
+            if "$RUNNER_TEMP/check-aiso-welcome" qa/mac.png; then visible=1; break; fi
+            sleep 2
+          done
           [ "$ready" = "1" ]
+          [ "$visible" = "1" ]
       - name: QA (Windows)
         if: matrix.name == 'windows'
         shell: pwsh
