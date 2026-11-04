@@ -94,6 +94,7 @@ jobs:
           node tools/qa-engine.mjs "out/aiso-engine-${{ matrix.triple }}$ext"
           node tools/qa-graph-engine.mjs "out/aiso-engine-${{ matrix.triple }}$ext"
           node tools/qa-free-time-engine.mjs "out/aiso-engine-${{ matrix.triple }}$ext"
+          node tools/qa-mcp-engine.mjs "out/aiso-engine-${{ matrix.triple }}$ext"
           node tools/qa-restore-engine.mjs "out/aiso-engine-${{ matrix.triple }}$ext"
       - uses: actions/upload-artifact@v4
         with:
