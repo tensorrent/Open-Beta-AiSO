@@ -67,6 +67,7 @@ jobs:
           export AISO_HOME="$RUNNER_TEMP/aisohome"
           "out/aiso-engine-${{ matrix.triple }}$ext" models
           "out/aiso-engine-${{ matrix.triple }}$ext" audit
+          node tools/qa-engine.mjs "out/aiso-engine-${{ matrix.triple }}$ext"
       - uses: actions/upload-artifact@v4
         with:
           name: engine-${{ matrix.triple }}
@@ -150,43 +151,41 @@ jobs:
           app/src-tauri/target/release/aiso-engine models
           xvfb-run -a -s "-screen 0 1280x800x24" bash -c '
             app/src-tauri/target/release/aiso > qa/linux-app.log 2>&1 & APP=$!
-            code=000
-            for i in $(seq 1 30); do code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8786/setup/state); [ "$code" = "401" ] && break; sleep 1; done
+            ready=0
+            node tools/wait-setup.mjs 8786 && ready=1
             sleep 6
-            echo "engine answered $code"
+            echo "engine readiness passed: $ready"
             ps -eo pid,args | grep -E "[a]iso" || true
             import -window root qa/linux.png
             kill $APP || true
             cat qa/linux-app.log | grep -v dbind | tail -20
-            [ "$code" = "401" ]'
+            [ "$ready" = "1" ]'
       - name: QA (macOS)
         if: matrix.name == 'mac'
         run: |
           export AISO_HOME="$RUNNER_TEMP/qa-home"
           APPDIR=$(ls -d app/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app | head -1)
           "$APPDIR/Contents/MacOS/aiso" & APP=$!
-          sleep 20
-          code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8786/setup/state)
-          echo "engine answered $code"
+          ready=0
+          node tools/wait-setup.mjs 8786 && ready=1
           screencapture -x qa/mac.png || true
           kill $APP
-          [ "$code" = "401" ]
+          [ "$ready" = "1" ]
       - name: QA (Windows)
         if: matrix.name == 'windows'
         shell: pwsh
         run: |
           $env:AISO_HOME = "$env:RUNNER_TEMP\qa-home"
           $p = Start-Process -FilePath "app\src-tauri\target\release\aiso.exe" -PassThru
-          Start-Sleep -Seconds 20
-          try { Invoke-WebRequest -Uri http://127.0.0.1:8786/setup/state -UseBasicParsing | Out-Null; $code = 200 } catch { $code = [int]$_.Exception.Response.StatusCode }
-          Write-Host "engine answered $code"
+          node tools/wait-setup.mjs 8786
+          $ready = $LASTEXITCODE
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
           $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
           $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
           [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
           $bmp.Save("qa\windows.png")
           Stop-Process -Id $p.Id -Force
-          if ($code -ne 401) { exit 1 }
+          if ($ready -ne 0) { exit 1 }
       - uses: actions/upload-artifact@v4
         with:
           name: build-${{ matrix.name }}
@@ -260,7 +259,24 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out qa
-          cp "$(find app/src-tauri/gen/android -name '*.apk' -path '*debug*' | head -1)" out/AISO-Android-arm64.apk
+          # The downloadable APK must support both phones and the emulator we test.
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import shutil
+          candidates = []
+          for apk in Path('app/src-tauri/gen/android').rglob('*.apk'):
+              if 'debug' not in str(apk).lower():
+                  continue
+              with ZipFile(apk) as bundle:
+                  abis = {p.split('/')[1] for p in bundle.namelist() if p.startswith('lib/') and p.endswith('.so')}
+              if {'arm64-v8a', 'x86_64'} <= abis:
+                  candidates.append(apk)
+          if len(candidates) != 1:
+              raise SystemExit(f'Expected one arm64 + x86_64 APK, found {candidates}')
+          shutil.copyfile(candidates[0], 'out/AISO-Android-arm64.apk')
+          print('Verified APK contains arm64-v8a and x86_64 native libraries')
+          PY
           ls -la out
       - name: Enable KVM
         run: |
