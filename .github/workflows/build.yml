@@ -34,6 +34,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Unlock the encrypted source (git-crypt key from the GIT_CRYPT_KEY secret)
+        run: node .github/git-crypt-unlock.mjs
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -94,6 +98,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Unlock the encrypted source (git-crypt key from the GIT_CRYPT_KEY secret)
+        run: node .github/git-crypt-unlock.mjs
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -202,6 +210,10 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Unlock the encrypted source (git-crypt key from the GIT_CRYPT_KEY secret)
+        run: node .github/git-crypt-unlock.mjs
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -224,6 +236,10 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Unlock the encrypted source (git-crypt key from the GIT_CRYPT_KEY secret)
+        run: node .github/git-crypt-unlock.mjs
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -295,6 +311,10 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Unlock the encrypted source (git-crypt key from the GIT_CRYPT_KEY secret)
+        run: node .github/git-crypt-unlock.mjs
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -346,6 +366,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         if: env.ANTHROPIC_API_KEY != ''
+      - name: Unlock the encrypted source (git-crypt key from the GIT_CRYPT_KEY secret)
+        if: env.ANTHROPIC_API_KEY != ''
+        run: node .github/git-crypt-unlock.mjs
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
       - uses: actions/setup-node@v4
         if: env.ANTHROPIC_API_KEY != ''
         with:
